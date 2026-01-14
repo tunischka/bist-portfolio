@@ -107,52 +107,155 @@ def show_portfolio_page():
     
     st.markdown("---")
     
-    # Yeni işlem ekleme
-    with st.expander("➕ Yeni İşlem Ekle", expanded=False):
-        with st.form("new_transaction_form"):
-            col1, col2 = st.columns(2)
+    # Yeni işlem ekleme - Modern UI
+    st.subheader("➕ Yeni İşlem Ekle")
+    
+    from src.utils.bist_stocks import BIST_STOCKS, get_stock_display_name, search_stocks
+    
+    # Container for form
+    with st.container():
+        # Hisse seçimi (autocomplete)
+        search_query = st.text_input(
+            "🔍 Hisse Ara", 
+            placeholder="THYAO, GARAN, İş Bankası...",
+            key="stock_search",
+            help="Hisse kodu veya şirket adı yazın"
+        )
+        
+        filtered_stocks = search_stocks(search_query) if search_query else BIST_STOCKS
+        
+        if filtered_stocks:
+            selected_symbol = st.selectbox(
+                "Hisse Seç",
+                options=list(filtered_stocks.keys()),
+                format_func=lambda x: get_stock_display_name(x),
+                key="stock_select"
+            )
+        else:
+            st.warning("Arama sonucu bulunamadı")
+            selected_symbol = None
+        
+        if selected_symbol:
+            # Güncel fiyatı çek
+            current_price = get_stock_price(selected_symbol)
+            if current_price is None or current_price == 0:
+                current_price = 100.0  # Default
+                st.warning(f"⚠️ {selected_symbol} için güncel fiyat alınamadı. Manuel fiyat girin.")
+            
+            # Fiyat kontrolü
+            st.markdown("### 💰 Fiyat")
+            col1, col2, col3, col4, col5 = st.columns([3, 0.7, 0.7, 0.7, 0.7])
             
             with col1:
-                symbol = st.text_input(
-                    "Hisse Kodu",
-                    placeholder="Örn: THYAO, GARAN, ISCTR"
-                ).upper()
-                transaction_type = st.selectbox("İşlem Tipi", ["BUY", "SELL"])
-                quantity = st.number_input("Miktar (Adet)", min_value=1.0, step=1.0)
+                if 'transaction_price' not in st.session_state:
+                    st.session_state.transaction_price = current_price
+                
+                price = st.number_input(
+                    "Birim Fiyat (₺)",
+                    min_value=0.01,
+                    value=float(st.session_state.transaction_price),
+                    step=0.01,
+                    format="%.2f",
+                    key="price_input",
+                    label_visibility="collapsed"
+                )
+                st.session_state.transaction_price = price
             
             with col2:
-                price = st.number_input("Birim Fiyat (₺)", min_value=0.01, step=0.01, format="%.2f")
-                commission = st.number_input("Komisyon (₺)", min_value=0.0, step=0.01, value=0.0, format="%.2f")
-                transaction_date = st.date_input("İşlem Tarihi", value=datetime.now())
-            
-            submit = st.form_submit_button("İşlemi Kaydet", type="primary", use_container_width=True)
-            
-            if submit:
-                if not symbol:
-                    st.error("Lütfen hisse kodu girin")
-                elif quantity <= 0 or price <= 0:
-                    st.error("Miktar ve fiyat 0'dan büyük olmalı")
-                else:
-                    # Sembol validasyonu (opsiyonel - yavaş olabilir)
-                    # if not validate_bist_symbol(symbol):
-                    #     st.error(f"'{symbol}' geçerli bir BIST hissesi değil veya fiyat alınamadı")
-                    # else:
-                    
-                    new_transaction = Transaction(
-                        transaction_id='',
-                        portfolio_id=portfolio_id,
-                        symbol=symbol if symbol.endswith('.IS') else f"{symbol}.IS",
-                        transaction_type=transaction_type,
-                        quantity=quantity,
-                        price=price,
-                        commission=commission,
-                        transaction_date=datetime.combine(transaction_date, datetime.min.time()),
-                        created_at=datetime.now()
-                    )
-                    
-                    transaction_repo.create(new_transaction)
-                    st.success(f"✅ {transaction_type} işlemi kaydedildi: {quantity} adet {symbol} @ ₺{price}")
+                if st.button("−10", use_container_width=True, key="minus_10"):
+                    st.session_state.transaction_price = max(0.01, price - 10)
                     st.rerun()
+            with col3:
+                if st.button("−1", use_container_width=True, key="minus_1"):
+                    st.session_state.transaction_price = max(0.01, price - 1)
+                    st.rerun()
+            with col4:
+                if st.button("+1", use_container_width=True, key="plus_1"):
+                    st.session_state.transaction_price = price + 1
+                    st.rerun()
+            with col5:
+                if st.button("+10", use_container_width=True, key="plus_10"):
+                    st.session_state.transaction_price = price + 10
+                    st.rerun()
+            
+            # Adet girişi
+            st.markdown("### 📦 Adet")
+            quantity = st.number_input(
+                "Miktar",
+                min_value=1.0,
+                value=1.0,
+                step=1.0,
+                key="quantity_input",
+                label_visibility="collapsed"
+            )
+            
+            # Toplam tutar
+            total = price * quantity
+            st.metric("💵 Toplam", f"₺{total:,.2f}")
+            
+            st.markdown("---")
+            
+            # Buy/Sell butonları
+            col1, col2 = st.columns(2)
+            with col1:
+                buy_clicked = st.button(
+                    "🟢 AL",
+                    use_container_width=True,
+                    type="primary",
+                    key="buy_btn"
+                )
+            with col2:
+                sell_clicked = st.button(
+                    "🔴 SAT",
+                    use_container_width=True,
+                    key="sell_btn"
+                )
+            
+            # Advanced mode toggle
+            st.markdown("---")
+            with st.expander("⚙️ Gelişmiş Seçenekler"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    transaction_date = st.date_input(
+                        "📅 İşlem Tarihi",
+                        value=datetime.now(),
+                        key="adv_date"
+                    )
+                with col2:
+                    commission = st.number_input(
+                        "💳 Komisyon (₺)",
+                        min_value=0.0,
+                        value=0.0,
+                        step=0.01,
+                        format="%.2f",
+                        key="adv_commission"
+                    )
+            else:
+                transaction_date = datetime.now()
+                commission = 0.0
+            
+            # İşlem kaydı
+            if buy_clicked or sell_clicked:
+                transaction_type = "BUY" if buy_clicked else "SELL"
+                
+                new_transaction = Transaction(
+                    transaction_id='',
+                    portfolio_id=portfolio_id,
+                    symbol=selected_symbol if selected_symbol.endswith('.IS') else f"{selected_symbol}.IS",
+                    transaction_type=transaction_type,
+                    quantity=quantity,
+                    price=price,
+                    commission=commission,
+                    transaction_date=datetime.combine(transaction_date, datetime.min.time()),
+                    created_at=datetime.now()
+                )
+                
+                transaction_repo.create(new_transaction)
+                st.success(f"✅ {transaction_type} işlemi kaydedildi: {quantity} adet {selected_symbol} @ ₺{price}")
+                
+                # Reset price
+                st.session_state.transaction_price = current_price
+                st.rerun()
     
     st.markdown("---")
     
