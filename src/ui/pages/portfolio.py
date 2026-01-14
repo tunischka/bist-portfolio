@@ -59,12 +59,29 @@ def show_portfolio_page():
     
     # Auto-refresh her 60 saniyede bir
     st.sidebar.markdown("---")
-    st.sidebar.caption("🔄 Otomatik yenileme: 60 saniye")
-    import time
-    time.sleep(0.1)  # Prevent too frequent reruns
-    if st.sidebar.button("🔄 Şimdi Yenile", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
+    st.sidebar.markdown("### 🔄 Kontroler")
+    
+    col1, col2 = st.sidebar.columns(2)
+    with col1:
+        if st.button("🔄 Yenile", use_container_width=True, key="refresh_btn"):
+            st.cache_data.clear()
+            st.rerun()
+    with col2:
+        if st.button("🗑️ Cache Sil", use_container_width=True, key="clear_cache_btn"):
+            st.cache_data.clear()
+            st.success("Cache temizlendi!")
+            st.rerun()
+    
+    # Version info
+    st.sidebar.markdown("---")
+    try:
+        from src.utils.version import get_git_info
+        git_info = get_git_info()
+        st.sidebar.caption(f"📌 Version: `{git_info['version']}`")
+        st.sidebar.caption(f"📅 Deploy: {git_info['date']}")
+    except:
+        st.sidebar.caption("📌 Version: dev")
+
     
     # İşlemleri yükle
     transaction_repo = TransactionRepository()
