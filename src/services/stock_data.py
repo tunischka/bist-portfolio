@@ -1,6 +1,7 @@
 """
 TradingView (tvDatafeed) ile BIST hisse senedi verisi çekme
 """
+import os
 import streamlit as st
 from typing import Optional, Dict
 from datetime import datetime
@@ -11,11 +12,34 @@ from tvDatafeed import TvDatafeed, Interval
 _tv_client = None
 
 def get_tv_client():
-    """TradingView client'ı al"""
+    """TradingView client'ı al (opsiyonel login ile)"""
     global _tv_client
     if _tv_client is None:
-        # Username/password gerektirmiyor - anonim kullanım
-        _tv_client = TvDatafeed()
+        try:
+            # Streamlit Cloud'da secrets kontrol et
+            if 'tradingview' in st.secrets:
+                username = st.secrets['tradingview'].get('username')
+                password = st.secrets['tradingview'].get('password')
+            else:
+                # Local'de .env'den al
+                username = os.getenv('TRADINGVIEW_USERNAME')
+                password = os.getenv('TRADINGVIEW_PASSWORD')
+            
+            # Login varsa kullan, yoksa anonim
+            if username and password:
+                _tv_client = TvDatafeed(username=username, password=password)
+                if st.session_state.get('debug_mode', False):
+                    st.sidebar.success("🔐 TradingView: Authenticated")
+            else:
+                _tv_client = TvDatafeed()
+                if st.session_state.get('debug_mode', False):
+                    st.sidebar.info("🔓 TradingView: Anonymous")
+        except Exception as e:
+            # Hata durumunda anonim kullan
+            _tv_client = TvDatafeed()
+            if st.session_state.get('debug_mode', False):
+                st.sidebar.warning(f"⚠️ TradingView login failed: {str(e)}")
+    
     return _tv_client
 
 
