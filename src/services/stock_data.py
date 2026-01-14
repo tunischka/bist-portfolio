@@ -41,12 +41,12 @@ def get_stock_price(symbol: str) -> Optional[float]:
         Güncel fiyat veya None (hata durumunda)
     """
     try:
-        # BIST hisseleri ".IS" ile biter
+        # BIST hisseleri için Twelve Data formatı: .BIST
         original_symbol = symbol
-        if not symbol.upper().endswith('.IS'):
-            symbol = f"{symbol.upper()}.IS"
-        else:
-            symbol = symbol.upper()
+        
+        # .IS'yi temizle ve .BIST ekle
+        symbol = symbol.upper().replace('.IS', '')
+        symbol = f"{symbol}.BIST"
         
         # Twelve Data client
         td = get_twelvedata_client()
@@ -64,7 +64,7 @@ def get_stock_price(symbol: str) -> Optional[float]:
         data = ts.as_json()
         
         if not data or len(data) == 0:
-            st.warning(f"⚠️ {symbol} için veri bulunamadı. Lütfen ticker'ı kontrol edin.")
+            st.warning(f"⚠️ {original_symbol} için veri bulunamadı. Lütfen ticker'ı kontrol edin.")
             return None
         
         # En son fiyat
@@ -74,7 +74,7 @@ def get_stock_price(symbol: str) -> Optional[float]:
         # Debug mode
         if st.session_state.get('debug_mode', False):
             date_str = latest.get('datetime', 'N/A')
-            st.caption(f"📊 **{original_symbol}**: ₺{price:.2f} (Twelve Data - {date_str})")
+            st.caption(f"📊 **{original_symbol}**: ₺{price:.2f} (Twelve Data - {symbol} - {date_str})")
         
         return price
     
@@ -85,7 +85,7 @@ def get_stock_price(symbol: str) -> Optional[float]:
         if 'usage limit' in error_msg.lower() or 'quota' in error_msg.lower():
             st.error(f"⚠️ **Twelve Data günlük limiti doldu.** Yarın yeniden deneyin.")
         else:
-            st.error(f"❌ Fiyat alınamadı ({symbol}): {error_msg}")
+            st.error(f"❌ Fiyat alınamadı ({original_symbol}): {error_msg}")
         
         return None
 
@@ -102,23 +102,25 @@ def get_stock_info(symbol: str) -> Dict:
         Hisse bilgileri dict
     """
     try:
-        if not symbol.upper().endswith('.IS'):
-            symbol = f"{symbol.upper()}.IS"
+        # .IS'yi temizle ve .BIST ekle
+        original_symbol = symbol
+        symbol = symbol.upper().replace('.IS', '')
+        symbol = f"{symbol}.BIST"
         
         td = get_twelvedata_client()
         if not td:
             return {
-                'symbol': symbol,
-                'longName': symbol,
-                'currentPrice': get_stock_price(symbol),
+                'symbol': original_symbol,
+                'longName': original_symbol,
+                'currentPrice': get_stock_price(original_symbol),
             }
         
         # Quote bilgilerini al
         quote = td.quote(symbol=symbol).as_json()
         
         return {
-            'symbol': symbol,
-            'longName': quote.get('name', symbol),
+            'symbol': original_symbol,
+            'longName': quote.get('name', original_symbol),
             'currentPrice': float(quote.get('close', 0)),
             'previousClose': float(quote.get('previous_close', 0)),
             'dayHigh': float(quote.get('high', 0)),
@@ -129,9 +131,9 @@ def get_stock_info(symbol: str) -> Dict:
     except Exception:
         # Hata durumunda basit veri döndür
         return {
-            'symbol': symbol,
-            'longName': symbol,
-            'currentPrice': get_stock_price(symbol),
+            'symbol': original_symbol,
+            'longName': original_symbol,
+            'currentPrice': get_stock_price(original_symbol),
         }
 
 
