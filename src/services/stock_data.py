@@ -1,16 +1,38 @@
 """
-yfinance ile BIST hisse senedi verisi çekme
+Twelve Data API ile BIST hisse senedi verisi çekme
 """
-import yfinance as yf
+import os
 import streamlit as st
 from typing import Optional, Dict
-from datetime import datetime, timedelta
+from datetime import datetime
+from twelvedata import TDClient
 
 
-@st.cache_data(ttl=60)  # 1 dakika cache
+def get_twelvedata_client():
+    """Twelve Data client'ı al (API key ile)"""
+    try:
+        # Streamlit Cloud'da secrets'tan al
+        import streamlit as st
+        if 'twelvedata' in st.secrets:
+            api_key = st.secrets['twelvedata']['api_key']
+        else:
+            # Local'de .env'den al
+            api_key = os.getenv('TWELVEDATA_API_KEY')
+        
+        if not api_key:
+            st.error("❌ Twelve Data API key bulunamadı. Lütfen secrets'ı kontrol edin.")
+            return None
+        
+        return TDClient(apikey=api_key)
+    except Exception as e:
+        st.error(f"❌ Twelve Data client oluşturulamadı: {str(e)}")
+        return None
+
+
+@st.cache_data(ttl=300)  # 5 dakika cache
 def get_stock_price(symbol: str) -> Optional[float]:
     """
-    Hisse senedi için güncel fiyat getir
+    Hisse senedi için güncel fiyat getir (Twelve Data API)
     
     Args:
         symbol: BIST ticker sembolü (örn: "THYAO.IS" veya "THYAO")
@@ -26,32 +48,45 @@ def get_stock_price(symbol: str) -> Optional[float]:
         else:
             symbol = symbol.upper()
         
-        ticker = yf.Ticker(symbol)
-        
-        # Önce yakın tarihli veri deneyelim (5 gün)
-        hist = ticker.history(period='5d')
-        
-        if hist.empty:
-            # Alternatif: 1 ay geriye git
-            hist = ticker.history(period='1mo')
-        
-        if hist.empty:
-            # Debug için hata mesajı göster
-            st.warning(f"⚠️ {symbol} için veri bulunamadı. Lütfen sembolü kontrol edin.")
+        # Twelve Data client
+        td = get_twelvedata_client()
+        if not td:
             return None
         
-        # En son mevcut fiyat
-        latest_price = float(hist['Close'].iloc[-1])
+        # Fiyat çek
+        ts = td.time_series(
+            symbol=symbol,
+            interval="1day",
+            outputsize=1,
+            timezone="Europe/Istanbul"
+        )
         
-        # Debug: veri tarihini göster
-        latest_date = hist.index[-1].strftime('%Y-%m-%d %H:%M')
+        data = ts.as_json()
+        
+        if not data or len(data) == 0:
+            st.warning(f"⚠️ {symbol} için veri bulunamadı. Lütfen ticker'ı kontrol edin.")
+            return None
+        
+        # En son fiyat
+        latest = data[0]
+        price = float(latest['close'])
+        
+        # Debug mode
         if st.session_state.get('debug_mode', False):
-            st.caption(f"📊 {original_symbol}: ₺{latest_price:.2f} (veri: {latest_date})")
+            date_str = latest.get('datetime', 'N/A')
+            st.caption(f"📊 **{original_symbol}**: ₺{price:.2f} (Twelve Data - {date_str})")
         
-        return latest_price
+        return price
     
     except Exception as e:
-        st.error(f"❌ Fiyat alınamadı ({symbol}): {str(e)}")
+        error_msg = str(e)
+        
+        # Rate limit kontrolü
+        if 'usage limit' in error_msg.lower() or 'quota' in error_msg.lower():
+            st.error(f"⚠️ **Twelve Data günlük limiti doldu.** Yarın yeniden deneyin.")
+        else:
+            st.error(f"❌ Fiyat alınamadı ({symbol}): {error_msg}")
+        
         return None
 
 
@@ -70,16 +105,25 @@ def get_stock_info(symbol: str) -> Dict:
         if not symbol.upper().endswith('.IS'):
             symbol = f"{symbol.upper()}.IS"
         
-        ticker = yf.Ticker(symbol)
-        info = ticker.info
+        td = get_twelvedata_client()
+        if not td:
+            return {
+                'symbol': symbol,
+                'longName': symbol,
+                'currentPrice': get_stock_price(symbol),
+            }
+        
+        # Quote bilgilerini al
+        quote = td.quote(symbol=symbol).as_json()
         
         return {
             'symbol': symbol,
-            'longName': info.get('longName', symbol),
-            'currentPrice': info.get('currentPrice', get_stock_price(symbol)),
-            'previousClose': info.get('previousClose', 0),
-            'dayHigh': info.get('dayHigh', 0),
-            'dayLow': info.get('dayLow', 0),
+            'longName': quote.get('name', symbol),
+            'currentPrice': float(quote.get('close', 0)),
+            'previousClose': float(quote.get('previous_close', 0)),
+            'dayHigh': float(quote.get('high', 0)),
+            'dayLow': float(quote.get('low', 0)),
+            'volume': int(quote.get('volume', 0)),
         }
     
     except Exception:
@@ -103,3 +147,4 @@ def validate_bist_symbol(symbol: str) -> bool:
     """
     price = get_stock_price(symbol)
     return price is not None and price > 0
+

@@ -1,0 +1,5 @@
+streamlit
+firebase-admin
+yfinance
+python-dotenv
+pandas

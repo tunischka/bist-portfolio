@@ -3,3 +3,4 @@ firebase-admin
 yfinance
 python-dotenv
 pandas>=2.0.0
+twelvedata
