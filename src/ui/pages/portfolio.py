@@ -213,7 +213,9 @@ def show_portfolio_page():
             
             # Advanced mode toggle
             st.markdown("---")
-            with st.expander("⚙️ Gelişmiş Seçenekler"):
+            show_advanced = st.checkbox("⚙️ Gelişmiş Seçenekler", value=False, key="adv_toggle")
+            
+            if show_advanced:
                 col1, col2 = st.columns(2)
                 with col1:
                     transaction_date = st.date_input(
